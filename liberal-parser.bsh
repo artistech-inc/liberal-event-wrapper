@@ -121,7 +121,7 @@ void perfectAMR(String io_dir){
     ArgumentRoleNaming.processDoc(roleNamingResult, finalOutput);
 }
 
-void systemAMR(String io_dir){
+void systemAMR(String io_dir, int min_cluster, int max_cluster){
     // ************  INPUT  **********************************
     // INPUT: the directory of the system AMR annotation files
     String parsedFilePath = io_dir + File.separator + "AMRParsingSystem/";
@@ -165,8 +165,8 @@ void systemAMR(String io_dir){
     GeneralRepresentation.processStructureRep1(triggerGeneralVec, triggerMultilayerStrucRep);
     System.out.println("finish generating trigger and arg representations ..");
 
-    int min = 10;
-    int maxNum = 60;
+    int min = min_cluster;
+    int maxNum = max_cluster;
     double balance = 0.7;
 
     String siginal = "System";
@@ -224,8 +224,16 @@ Calendar start = Calendar.getInstance();
 System.out.println("systemAMR()");
 
 File f = new File(bsh.args[0]);
+int min_cluster = 10;
+int max_cluster = 60;
+if(bsh.args.length > 2) {
+    min_cluster = Integer.parseInt(bsh.args[1]);
+    max_cluster = Integer.parseInt(bsh.args[2]);
+}
 if(f.exists()) {
-    systemAMR(bsh.args[0]);
+    System.out.println("Min Cluster: " + min_cluster);
+    System.out.println("Max Cluster: " + max_cluster);
+    systemAMR(bsh.args[0], min_cluster, max_cluster));
 } else {
     logger.log(Level.WARNING, "No input directory found: ", bsh.args[0]);
 }
