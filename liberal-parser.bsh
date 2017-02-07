@@ -15,6 +15,112 @@ import rpi.nlp.arl.util.EntityIndex;
 import rpi.nlp.arl.util.PutEntityArguments;
 import rpi.nlp.word2vec.VectorModel;
 
+void perfectAMR(String io_dir){
+    // ************  INPUT  ********************************
+    // INPUT: the directory of the gold AMR annotation files
+    String parsedFilePath = io_dir + File.separator + "AMRParsingHuman/";
+    // INPUT: the directory of the gold AMR alignment files
+    String alignmentFilePath = io_dir + File.separator + "AMRAlignment/";
+
+    // MEDIATE: nodes and edges extracted from AMR parsing
+    String nodeEdgeFilePath = io_dir + File.separator + "AMRNodeEdge/";
+    // MEDIATE: triggers and corresponding arguments
+    String triggerArgFile = io_dir + File.separator + "triggerArgFile.txt";
+    // MEDIATE: word sense vectors for triggers
+    String triggerGeneralVec = io_dir + File.separator + "triggerGeneralVec.txt";
+    // MEDIATE: general vectors for arguments
+    String argumentVec = io_dir + File.separator + "argumentVec.txt";
+    // MEDIATE: event structures representations
+    String triggerMultilayerStrucRep = io_dir + File.separator + "triggerMultilayerStructureRep.txt";
+
+    //extract nodes and edges from AMR parsing results
+    AMRTranslator.translate(parsedFilePath, alignmentFilePath, nodeEdgeFilePath);
+    System.out.println("finished extracting nodes and edges ..");
+
+    //Identify trigger and argument candidates
+    // INPUT: Annotations for AMR relation: whether the relation will be used to compose the event structure or for specifying arguments
+    String annotatedRelationFile = "Data/Resources/amrRelationsAnnotated.txt";
+    TriggerArgIdentifier.identifyTriggerArgs(nodeEdgeFilePath, triggerArgFile, annotatedRelationFile);
+    System.out.println("finished extracting triggers and arguments ..");
+
+    // MEDIATE: Entities from AMR parsing
+    String amrParsedEntities = "Data/Resources/amrParsedEntities.txt";
+    //EntityIndex.readEntitys(nodeEdgeFilePath, amrParsedEntities);
+
+    // MEDIATE: update entity vectors
+    String newTriggerArgFile = io_dir + File.separator + "triggerArgFile1.txt";
+    PutEntityArguments.put(amrParsedEntities, triggerArgFile, newTriggerArgFile);
+
+    //train Tensor/Matrix representations for each relation
+    // INPUT: pre-trained word sense embeddings
+    String modelFile = "Data/model/wsd.model";
+    VectorModel vm = VectorModel.loadFromFile(modelFile);
+//		TreeTensorAE ttae = new TreeTensorAE();
+//		ttae.pipeline(nodeEdgeFilePath, vm);
+//		System.out.println("finished training relation representations ..");
+
+    // generate tree structure representation
+    TAEOutput.generateResults(vm, nodeEdgeFilePath, triggerMultilayerStrucRep);
+    System.out.println("finished generating structure representations ..");
+
+    // generate trigger and argument representations, and update structure representations
+    // MEDIATE: will generate a new structure representation file: triggerMultilayerStrucRep+".processed"
+    GeneralRepresentation.generalRepresentation(modelFile, triggerGeneralVec, argumentVec, triggerArgFile);
+    GeneralRepresentation.processStructureRep1(triggerGeneralVec, triggerMultilayerStrucRep);
+    System.out.println("finished generating trigger and arg representations ..");
+
+    int min = 100;
+    int maxNum = 120;
+    double balance = 0.6;
+
+    String siginal = "test";
+    System.out.println("start clustering ..");
+
+    // MEDIATE: will generate many clustering results
+    String triggerResultPath = io_dir + File.separator + "Cluster/triggerOverallCluster";
+    String argResultPath = io_dir + File.separator + "Cluster/argOverallCluster";
+
+    double minOptimalValue = 100000000;
+    int minNumOfClusterTrigger=0, minNumOfClusterArgument=0;
+
+    for(int numOfClusterTrigger = min; numOfClusterTrigger<maxNum; numOfClusterTrigger=numOfClusterTrigger+2){
+        for(int numOfClusterArgument = min; numOfClusterArgument<maxNum; numOfClusterArgument=numOfClusterArgument+5){
+            JointCluster jc = new JointCluster();
+            double optimalValue = jc.jointOptimizedClusteringOverall(triggerGeneralVec, triggerMultilayerStrucRep+".processed", argumentVec, numOfClusterTrigger, numOfClusterArgument, triggerResultPath, argResultPath, triggerArgFile, balance, siginal);
+            if(optimalValue<minOptimalValue){
+                minOptimalValue = optimalValue;
+                minNumOfClusterTrigger = numOfClusterTrigger;
+                minNumOfClusterArgument = numOfClusterArgument;
+            }
+        }
+    }
+
+    System.out.println("finish Clustering...");
+
+    String optimalTriggerClusterFile = triggerResultPath + "."+minNumOfClusterTrigger + "." + minNumOfClusterArgument;
+    String optimalArgumentClusterFile = argResultPath + "."+minNumOfClusterTrigger + "." + minNumOfClusterArgument;
+
+    String namingMethod = "majority"; // majority or centroid
+    String namedClusterFile = optimalTriggerClusterFile+"."+namingMethod;
+    TriggerNaming.naming1(optimalTriggerClusterFile, namedClusterFile, triggerGeneralVec, namingMethod);
+
+    // INPUT: arg role mapping results extracted from FrameNet, VerbNet, and PropBank
+    String roleMapFile = "Data/Resources/argRoleMap1.txt";
+
+    // MEDIATE: the output, including triggers, arguments, and their roles.
+    String roleNamingResult = io_dir + File.separator + "argRoleNamingResult.txt";
+    EntityIndex.readEntitys(nodeEdgeFilePath, amrParsedEntities);
+
+    // MEDIATE: remove some noisy args
+    String notArgFile = "Data/Resources/notArgs.txt";
+    ArgumentRoleNaming.argumentRoleNaming(modelFile, notArgFile, namedClusterFile, triggerArgFile, roleMapFile, amrParsedEntities, roleNamingResult);
+
+    // OUTPUT: the final output, including triggers, arguments, and their roles.
+    // OUTPUT FILE: finalOutput
+    String finalOutput = io_dir + File.separator + "output.human.txt";
+    ArgumentRoleNaming.processDoc(roleNamingResult, finalOutput);
+}
+
 void systemAMR(String io_dir){
     // ************  INPUT  **********************************
     // INPUT: the directory of the system AMR annotation files
